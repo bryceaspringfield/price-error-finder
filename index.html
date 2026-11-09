@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Price error finder</title>
+<style>
+  :root { --bg:#fff; --fg:#1d1d1f; --mute:#5f6368; --line:#dadce0; --chip:#f1f3f4; --on:#0b57d0; --onfg:#fff; --good:#146c2e; --mid:#856a00; --low:#a50e0e; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#141414; --fg:#e8eaed; --mute:#9aa0a6; --line:#3c4043; --chip:#262626; --on:#8ab4f8; --onfg:#141414; --good:#81c995; --mid:#fdd663; --low:#f28b82; } }
+  body { margin:0; font:15px/1.45 system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background:var(--bg); color:var(--fg); }
+  header, main { max-width:1200px; margin:0 auto; padding:16px 20px; }
+  h1 { font-size:22px; margin:0 0 4px; }
+  .sub { color:var(--mute); margin:0; }
+  fieldset { border:1px solid var(--line); border-radius:10px; padding:12px 14px; margin:0 0 12px; }
+  legend { font-weight:600; padding:0 6px; }
+  .chips { display:flex; flex-wrap:wrap; gap:6px; }
+  .chip { border:1px solid var(--line); background:var(--chip); color:var(--fg); border-radius:16px; padding:4px 12px; cursor:pointer; font:inherit; }
+  .chip[aria-pressed="true"] { background:var(--on); color:var(--onfg); border-color:var(--on); }
+  .row { display:flex; flex-wrap:wrap; gap:18px; align-items:center; }
+  label { white-space:nowrap; }
+  input[type=search] { font:inherit; padding:5px 8px; min-width:240px; border:1px solid var(--line); border-radius:6px; background:var(--bg); color:var(--fg); }
+  input.num { font:inherit; width:6em; padding:4px 6px; border:1px solid var(--line); border-radius:6px; background:var(--bg); color:var(--fg); }
+  select { font:inherit; padding:4px; background:var(--bg); color:var(--fg); border:1px solid var(--line); border-radius:6px; }
+  output { display:inline-block; min-width:3.2em; font-variant-numeric:tabular-nums; }
+  table { width:100%; border-collapse:collapse; font-variant-numeric:tabular-nums; }
+  th, td { text-align:left; padding:7px 8px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { position:sticky; top:0; background:var(--bg); cursor:pointer; user-select:none; }
+  td.n, th.n { text-align:right; }
+  a { color:var(--on); }
+  .err { font-size:12px; border:1px solid var(--low); color:var(--low); border-radius:4px; padding:0 4px; margin-left:6px; white-space:nowrap; }
+  .hi { color:var(--good); font-weight:600; } .md { color:var(--mid); } .lo { color:var(--low); }
+  .count { margin:8px 0; color:var(--mute); }
+  details { margin-top:18px; color:var(--mute); }
+  .btn { font:inherit; padding:4px 10px; border:1px solid var(--line); border-radius:6px; background:var(--chip); color:var(--fg); cursor:pointer; }
+  td.ph img { height: 64px; width: 64px; object-fit: cover; border-radius: 3px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Price error finder</h1>
+  <p class="sub">Mistaken and unusually deep prices posted on deal forums, fare trackers, and price-history sites, updated hourly. <span id="built"></span></p>
+</header>
+<main>
+  <fieldset><legend>Categories</legend>
+    <div class="chips" id="cats"></div>
+    <div class="row" style="margin-top:8px"><button class="btn" id="all">All categories</button><button class="btn" id="none">Clear</button></div>
+  </fieldset>
+  <fieldset><legend>Filters</legend>
+    <div class="row">
+      <label><input type="checkbox" id="erronly"> Price errors only</label>
+      <label><input type="checkbox" id="live"> Only deals live on the store page when last checked</label>
+      <label>Discount at least <input type="range" id="disc" min="0" max="95" step="5" value="0"> <output id="discv"></output></label>
+      <label><input type="checkbox" id="unk"> Include deals with no discount found</label>
+      <label>Honor chance at least <input type="range" id="honor" min="0" max="90" step="5" value="0"> <output id="honorv"></output></label>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <label>Posted within <select id="age"><option value="1">1 day</option><option value="3">3 days</option><option value="7" selected>7 days</option><option value="14">14 days</option></select></label>
+      <label>Price $<input type="number" id="pmin" min="0" step="1" placeholder="min" class="num"> to $<input type="number" id="pmax" min="0" step="1" placeholder="max" class="num"></label>
+      <label>Seller <select id="seller"><option value="">Any</option></select></label>
+      <label><input type="search" id="q" placeholder="Search titles, e.g., OLED, Tokyo, SSD"></label>
+    </div>
+  </fieldset>
+  <div class="count" id="count"></div>
+  <table>
+    <thead><tr>
+      <th data-k="p">Posted (ET)</th><th>Photo</th><th data-k="t">Deal</th><th data-k="v" title="The cluster's last check of the store's own page">Store check</th><th data-k="c">Category</th>
+      <th class="n" data-k="pr">Price</th><th class="n" data-k="was">Usual price</th>
+      <th class="n" data-k="d">Discount</th><th class="n" data-k="h">Honor chance</th><th class="n" data-k="score">Score</th>
+      <th data-k="s">Seller</th><th data-k="f">Source</th>
+    </tr></thead>
+    <tbody id="rows"></tbody>
+  </table>
+  <details><summary>How the columns are computed</summary>
+    <ul>
+      <li><b>Deal</b>: links to the store's product page when the post links to one (affiliate and tracking codes removed); otherwise to the post. <b>Source</b>: links to the post.</li>
+      <li><b>Price</b>: the price in the post's title (for a fare, the lowest fare listed). <b>Usual price</b>: the regular, list, pre-coupon, or earlier selling price the post states; with only a percentage off stated, the price that percentage implies; with only a saving stated (e.g., "a $14 low"), the price plus that saving. Blank when the post states none. Only posts naming one product (an item or a fare) at one price are listed; store-wide sales, roundups, promotions, and card or bank bonuses are left out.</li>
+      <li><b>Discount</b>: from the post's own numbers ("40% off", "was $299", "to $81 from $88", "a $39 savings"). An error fare with no usual fare stated is set to 60%. A blank means the post states no usual price.</li>
+      <li><b>Honor chance</b>: a starting estimate by seller (airline 55%, Costco 50%, eBay 40%, Amazon 30%, hotel 30%, Best Buy 20%, other 30%), plus 30 points when the post reports orders shipped or honored and minus 20 when it reports cancellations.</li>
+      <li><b>Score</b>: discount times honor chance, with a blank discount counted as 50%.</li>
+      <li><b>Price error</b> tag: the title or post says price error, pricing error, price mistake, error fare, mistake fare, or glitch.</li>
+      <li><b>Category</b>: keyword rules over the title; a fare feed's posts are all Travel.</li>
+    </ul>
+    Your choices are saved in this browser and in the page address, which you can bookmark or share.
+  </details>
+</main>
+<script src="app.js"></script>
+</body>
+</html>
