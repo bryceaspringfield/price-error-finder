@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow, noarchive">
+<title>Used bikes</title>
+<style>
+  :root { --bg:#fff; --fg:#1d1d1f; --mute:#5f6368; --line:#dadce0; --chip:#f1f3f4; --on:#0b57d0; --good:#146c2e; --mid:#856a00; --low:#a50e0e; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#141414; --fg:#e8eaed; --mute:#9aa0a6; --line:#3c4043; --chip:#262626; --on:#8ab4f8; --good:#81c995; --mid:#fdd663; --low:#f28b82; } }
+  body { margin:0; font:15px/1.45 system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background:var(--bg); color:var(--fg); }
+  header, main { max-width:1200px; margin:0 auto; padding:16px 20px; }
+  h1 { font-size:22px; margin:0 0 4px; }
+  .sub, .count { color:var(--mute); margin:0; }
+  .count { margin:8px 0; }
+  fieldset { border:1px solid var(--line); border-radius:10px; padding:12px 14px; margin:0 0 12px; }
+  legend { font-weight:600; padding:0 6px; }
+  .row { display:flex; flex-wrap:wrap; gap:18px; align-items:center; }
+  label { white-space:nowrap; }
+  input[type=search] { font:inherit; padding:5px 8px; min-width:240px; border:1px solid var(--line); border-radius:6px; background:var(--bg); color:var(--fg); }
+  input.num { font:inherit; width:6em; padding:4px 6px; border:1px solid var(--line); border-radius:6px; background:var(--bg); color:var(--fg); }
+  select { font:inherit; padding:4px; background:var(--bg); color:var(--fg); border:1px solid var(--line); border-radius:6px; }
+  table { width:100%; border-collapse:collapse; font-variant-numeric:tabular-nums; }
+  th, td { text-align:left; padding:7px 8px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { position:sticky; top:0; background:var(--bg); cursor:pointer; user-select:none; white-space:nowrap; }
+  td.n, th.n { text-align:right; }
+  a { color:var(--on); }
+  .hi { color:var(--good); font-weight:600; } .md { color:var(--mid); } .lo { color:var(--low); }
+  td.ph { white-space: nowrap; } td.ph img { height: 90px; width: 90px; object-fit: cover; margin-right: 3px; border-radius: 3px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Used bikes</h1>
+  <p class="sub">Craigslist Boston listings of used road and hybrid bikes, checked hourly. <span id="built"></span></p>
+</header>
+<main>
+  <fieldset><legend>Filters</legend>
+    <div class="row">
+      <label><input type="checkbox" id="keep" checked> Only listings passing every check</label>
+      <label>Price up to $<input type="number" id="pmax" min="0" step="5" class="num"></label>
+      <label>Distance up to <input type="number" id="dmax" min="0" step="0.5" class="num"> miles</label>
+      <label>Size <select id="size"><option value="">Any</option></select></label>
+      <label>First seen within <select id="age"><option value="1">1 day</option><option value="3">3 days</option><option value="7">7 days</option><option value="0" selected>any time</option></select></label>
+      <label><input type="search" id="q" placeholder="Search titles, e.g., Trek, 54cm"></label>
+    </div>
+  </fieldset>
+  <p class="count" id="count"></p>
+  <table>
+    <thead><tr>
+      <th>Photos</th><th data-k="t">Listing</th><th data-k="p" class="n">Price</th><th data-k="d" class="n">Miles</th><th data-k="c">Condition</th>
+      <th data-k="s">Size</th><th data-k="w">Weight</th><th data-k="r">Check</th><th data-k="f">First seen</th>
+    </tr></thead>
+    <tbody id="rows"></tbody>
+  </table>
+</main>
+<script>
+(async function () {
+  const data = await (await fetch('bikes.json?' + Date.now())).json();
+  const $ = id => document.getElementById(id);
+  const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]));
+  $('built').textContent = 'Built ' + new Date(data.built * 1000).toLocaleString('en-US', {timeZone: 'America/New_York', dateStyle: 'medium', timeStyle: 'short'}) + ' ET.';
+  [...new Set(data.bikes.map(b => b.s).filter(Boolean))].sort().forEach(s => $('size').add(new Option(s, s)));
+  let key = 'f', dir = -1;
+  const sizeClass = {fit: 'hi', ok: 'hi', near: 'md', unknown: 'md', small: 'lo', large: 'lo'};
+  function draw() {
+    const q = $('q').value.trim().toLowerCase(), pmax = parseFloat($('pmax').value), dmax = parseFloat($('dmax').value);
+    const age = +$('age').value, since = age ? Date.now() / 1000 - age * 86400 : 0, size = $('size').value;
+    const rows = data.bikes.filter(b => (!$('keep').checked || b.k) && (isNaN(pmax) || b.p <= pmax) && (isNaN(dmax) || b.d <= dmax) &&
+      (!size || b.s === size) && b.f >= since && (!q || b.t.toLowerCase().includes(q)));
+    rows.sort((a, b) => { const x = a[key], y = b[key]; return (x == null) - (y == null) || (x < y ? -1 : x > y ? 1 : 0) * dir; });
+    $('count').textContent = rows.length + ' of ' + data.bikes.length + ' listings shown; ' + data.bikes.filter(b => b.k).length + ' pass every check.';
+    $('rows').innerHTML = rows.map(b => '<tr><td class="ph">' + (b.i || []).map(i => '<a href="https://images.craigslist.org/' + esc(i) + '_1200x900.jpg" target="_blank" rel="noopener noreferrer"><img loading="lazy" src="https://images.craigslist.org/' + esc(i) + '_300x300.jpg" alt=""></a>').join('') + '</td><td><a href="' + esc(b.u) + '" target="_blank" rel="noopener noreferrer">' + esc(b.t) + '</a></td>' +
+      '<td class="n">$' + Math.round(b.p) + '</td><td class="n">' + (b.d == null ? '' : b.d.toFixed(1)) + '</td><td>' + esc(b.c) + '</td>' +
+      '<td class="' + (sizeClass[b.s] || '') + '">' + esc(b.s) + '</td><td>' + esc(b.w) + '</td>' +
+      '<td class="' + (b.k ? 'hi' : 'lo') + '">' + (b.k ? 'passes' : esc(b.r)) + '</td>' +
+      '<td>' + new Date(b.f * 1000).toLocaleString('en-US', {timeZone: 'America/New_York', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit'}) + '</td></tr>').join('');
+  }
+  document.querySelectorAll('th').forEach(th => th.addEventListener('click', () => { dir = key === th.dataset.k ? -dir : 1; key = th.dataset.k; draw(); }));
+  ['keep', 'pmax', 'dmax', 'size', 'age', 'q'].forEach(id => $(id).addEventListener('input', draw));
+  draw();
+})();
+</script>
+</body>
+</html>
